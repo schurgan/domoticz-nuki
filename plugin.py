@@ -228,7 +228,7 @@ class BasePlugin:
 
         # FIX: Always start listening for callbacks (even after adding callback)
         self.httpServerConn = Domoticz.Connection(
-            Name="Server Connection", Transport="TCP/IP", Protocol="HTML", Port=self.callbackPort
+            Name="Server Connection", Transport="TCP/IP", Protocol="HTML", Port=str(self.callbackPort)
         )
         self.httpServerConn.Listen()
 

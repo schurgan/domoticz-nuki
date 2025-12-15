@@ -1,72 +1,62 @@
 """
-<plugin key="NukiLock" name="Nuki Lock Plugin" author="heggink" version="1.0.6">
+<?xml version="1.0" encoding="UTF-8"?>
+<plugin key="NukiLock" name="Nuki Lock Plugin" author="heggink" version="1.0.7-fixed">
+    <description>
+        <h2>Nuki Lock Plugin</h2>
+        <p>Domoticz HTTP support for Nuki locks via Nuki Bridge (developer mode).</p>
+        <p>Locks are Units 1..N, Unlatch buttons are Units N+1..2N (no collisions).</p>
+    </description>
+
     <params>
-        <param field="Port" label="Port" width="75px" required="true" default="8008"/>
-        <param field="Mode1" label="Bridge IP" width="150px" required="true" default="192.168.1.123"/>
-        <param field="Mode2" label="Bridge token" width="75px" required="true" default="abcdefgh"/>
-        <param field="Mode4" label="Bridge port" width="75px" required="true" default="8080"/>
-        <param field="Mode3" label="Poll interval (m)" width="75px" required="true" default="10"/>	
-        <param field="Mode5" label="Token Mode" width="75px">
+        <param field="Port"  label="Callback Port (Domoticz listens on)" width="160px" required="true" default="8008"/>
+        <param field="Mode1" label="Bridge IP" width="180px" required="true" default="192.168.1.123"/>
+        <param field="Mode2" label="Bridge token" width="220px" required="true" default="abcdefgh"/>
+        <param field="Mode4" label="Bridge port" width="120px" required="true" default="8080"/>
+        <param field="Mode3" label="Poll interval (m)" width="120px" required="true" default="10"/>
+        <param field="Mode5" label="Token Mode" width="120px">
            <options>
                <option label="Hashed" value="Hashed" />
                <option label="Plain" value="Plain" default="true"/>
            </options>
         </param>
-        <param field="Mode6" label="Debug" width="100px">
+        <param field="Mode6" label="Logging" width="140px">
             <options>
-                <option label="True" value="Debug"/>
-                <option label="False" value="Normal"  default="true" />
-                <option label="Logging" value="File"/>
+                <option label="Debug" value="Debug"/>
+                <option label="Normal" value="Normal" default="true" />
+                <option label="File" value="File"/>
             </options>
         </param>
     </params>
 </plugin>
 """
-
-#  nuki python plugin
+#  nuki python plugin (fixed)
 #
-# Author: heggink, 2018
+# Author: heggink/schurgan, 2025 (with fixes)
 #
-# this plugin provides domoticz HTTP support for the Nuki locks (www.nuki.io)
-# it requires a Nuki bridge in order to function
-# the Nuki bridge needs to placed in developer mode
-# version control:
-# 0.0.1:
-#    reads state changes coming from the locks (ssued by app, manual, other)
-#    read locks from the bridge on startup
-#    create devices in domoticz for every non existing lock
-#    handle state changes coming from the locks (app, manual, other) and update domoticz device
-#    onCommand: execute device changes from domoticz that need to be executed by the lock
-# todo:
-#    onHeartbeat: heart beats in case the lock state gets out of sync with domoticz and update domoticz
-# prerequisites:
-#    Hardware needs to be set up per bridge, each bridge can contain multiple locks
-#    setting up the bridge (incl developer mode to use the API assigning tokens and such)
-#    adding lock(s) to the bridge
+# Fixes:
+# - Unlatch unit numbering moved to N+1..2N (no unit collisions)
+# - Callback listener now ALWAYS starts (also after callback add)
+# - HTTPException import fixed
+# - Port types fixed (int for listen port)
+# - onStop safe
+# - LogMessage logic corrected
 #
-# changelog
-#    1.0.1 fixed tab error on line 88
-#    1.0.3 added bridge port 
-#    1.0.4 multiple small fixes as per giejay's fork
-#    1.0.5 catching success = false onheartbeat
-#    1.0.6 add unlatch button
-#
-#    1.0.7 enable Hashed tokens
 import Domoticz
 import json
-import sys
 import socket
 import urllib.request
 import urllib.error
 from urllib.error import URLError, HTTPError
+from http.client import HTTPException
 
 nukiHashDisabled = False
 try:
     from random import randrange
     from hashlib import sha256
     from datetime import datetime
-except:
+except Exception:
     nukiHashDisabled = True
+
 
 class BasePlugin:
     enabled = False
@@ -85,43 +75,38 @@ class BasePlugin:
     lockNames = []
     lockIds = []
 
-#     PARAMETERS NEED TO GO HERE
-
     def __init__(self):
         return
 
     def generateTokenString(self):
-        tokenStr=""
+        tokenStr = ""
         if self.hashedToken:
-            ts = datetime.utcnow().isoformat(timespec='seconds')+'Z'
+            ts = datetime.utcnow().isoformat(timespec='seconds') + 'Z'
             rnr = randrange(65535)
-            hashnum = sha256(str('{},{},{}').format(ts,rnr,self.bridgeToken).encode('utf-8')).hexdigest()
-            tokenStr=str('ts={}&rnr={}&hash={}').format(ts,rnr,hashnum)
+            hashnum = sha256(str('{},{},{}').format(ts, rnr, self.bridgeToken).encode('utf-8')).hexdigest()
+            tokenStr = str('ts={}&rnr={}&hash={}').format(ts, rnr, hashnum)
         else:
-            tokenStr=str('token=')+self.bridgeToken
+            tokenStr = str('token=') + self.bridgeToken
         return tokenStr
-
-
-#   on startup:
-#   determine how many locks configured in the bridge
-#   check if lock device(s) exist and create if not
-#   check if callback exists for the lock(s) and create if not there
-#   test the lock status for each lock and ensure that the domoticz lock device is the same
 
     def onStart(self):
         if Parameters["Mode6"] != "Normal":
             Domoticz.Debugging(1)
         DumpConfigToLog()
-        self.callbackPort = Parameters["Port"]
+
+        # Parameters
+        self.callbackPort = int(Parameters["Port"])
         self.bridgeIP = Parameters["Mode1"]
         self.bridgeToken = Parameters["Mode2"]
         self.pollInterval = int(Parameters["Mode3"])
-        self.bridgePort = Parameters["Mode4"]
+        self.bridgePort = str(Parameters["Mode4"])
         self.hashedToken = bool(Parameters["Mode5"] == "Hashed")
-        if (nukiHashDisabled and self.hashedToken ):
-            self.hashedToken = False
-            Domoticz.Error('Missing imports for Hashed token generation - Fallbacking to Plaintext')
 
+        if (nukiHashDisabled and self.hashedToken):
+            self.hashedToken = False
+            Domoticz.Error('Missing imports for Hashed token generation - Falling back to Plain')
+
+        # Determine local IP (for callback URL)
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("8.8.8.8", 80))
         self.myIP = s.getsockname()[0]
@@ -129,128 +114,139 @@ class BasePlugin:
         Domoticz.Debug("My IP is " + self.myIP)
         Domoticz.Log("Nuki plugin started on IP " + self.myIP + " and port " + str(self.callbackPort))
 
+        # List locks
         req = 'http://' + self.bridgeIP + ':' + self.bridgePort + '/list?' + self.generateTokenString()
         Domoticz.Debug('REQUESTING ' + req)
-#        resp = urllib.request.urlopen(req).read()
 
         try:
-            resp = urllib.request.urlopen(req).read()
+            resp_raw = urllib.request.urlopen(req).read()
         except HTTPError as e:
-            Domoticz.Error('NUKI HTTPError code: '+ str(e.code))
+            Domoticz.Error('NUKI HTTPError code: ' + str(e.code))
+            return
         except URLError as e:
-            Domoticz.Error('NUKI  URLError Reason: '+ str(e.reason))
+            Domoticz.Error('NUKI URLError Reason: ' + str(e.reason))
+            return
         else:
-            strData = resp.decode("utf-8", "ignore")
+            strData = resp_raw.decode("utf-8", "ignore")
             Domoticz.Debug("Lock list received " + strData)
             resp = json.loads(strData)
-            num = len(resp)
-            Domoticz.Debug("I count " + str(num) + " locks")
-            self.numLocks = num
 
-#	    create a lock device for every listed lock
-#	    and update the lock state and battery immediately as listed in the response
-            for i in range (num):
-                if (i+1 not in Devices):
-                    Domoticz.Device(Name=resp[i]["name"], Unit=i+1, TypeName="Switch", Switchtype=19, Used=1).Create()
-                    Domoticz.Log("Lock " + resp[i]["name"] + " created.")
-                else:
-                    Domoticz.Debug("Lock " + resp[i]["name"] + " already exists.")
+        num = len(resp)
+        Domoticz.Debug("I count " + str(num) + " locks")
+        self.numLocks = num
 
-                self.lockNames.append(resp[i]["name"])
-                self.lockIds.append(resp[i]["nukiId"])
-                Domoticz.Debug("Lock batt " + str(resp[i]["lastKnownState"]["batteryCritical"]))
-                Domoticz.Debug("Lock stateName " + resp[i]["lastKnownState"]["stateName"])
-                Domoticz.Debug("Lock state " + str(resp[i]["lastKnownState"]["state"]))
-		
-                if (resp[i]["lastKnownState"]["batteryCritical"]):
-                    batt = 0
-                else:
-                    batt = 255
+        # Reset lists on restart
+        self.lockNames = []
+        self.lockIds = []
 
-                nval = -1
-                sval = "Unknown"
-                
-                if (resp[i]["lastKnownState"]["state"] == 1):
-                    sval = 'Locked'
-                    nval = 1
-                elif (resp[i]["lastKnownState"]["state"] == 3):
-                    sval = 'Unlocked'
-                    nval = 0
-                Devices[i+1].Update(nValue=nval, sValue=str(sval), Description=str(resp[i]["nukiId"]), BatteryLevel=batt)
+        # Create lock device(s): Units 1..N
+        for i in range(num):
+            lock_unit = i + 1
+            if (lock_unit not in Devices):
+                Domoticz.Device(Name=resp[i]["name"], Unit=lock_unit, TypeName="Switch", Switchtype=19, Used=1).Create()
+                Domoticz.Log("Lock " + resp[i]["name"] + " created.")
+            else:
+                Domoticz.Debug("Lock " + resp[i]["name"] + " already exists.")
 
-#           create unlatch device for every listed lock
-            for i in range(num):
-                if ((2 * (i + 1)) not in Devices):
-                    Domoticz.Device(Name=resp[i]["name"]+"Unlatch", Unit=2*(i+1), TypeName="Switch", Switchtype=9, Used=1).Create()
-                    Domoticz.Log("Unlatch for Lock " + resp[i]["name"] + " created.")
-                else:
-                    Domoticz.Debug("Unlatch for Lock " + resp[i]["name"] + " already exists.")
-                                
-            Domoticz.Debug("Lock(s) created")
-            DumpConfigToLog()
-	
-#           check if callback exists and, if not, create
-            req = 'http://' + self.bridgeIP + ':' + self.bridgePort + '/callback/list?' + self.generateTokenString()
-            Domoticz.Debug('checking callback ' + req)
-            found = False
-        
+            self.lockNames.append(resp[i]["name"])
+            self.lockIds.append(resp[i]["nukiId"])
+
+            batt = 0 if resp[i]["lastKnownState"]["batteryCritical"] else 255
+
+            nval = -1
+            sval = "Unknown"
+            if (resp[i]["lastKnownState"]["state"] == 1):
+                sval = 'Locked'
+                nval = 1
+            elif (resp[i]["lastKnownState"]["state"] == 3):
+                sval = 'Unlocked'
+                nval = 0
+
+            Devices[lock_unit].Update(nValue=nval, sValue=str(sval),
+                                      Description=str(resp[i]["nukiId"]), BatteryLevel=batt)
+
+        # Create unlatch device(s): Units N+1..2N  (FIXED: no collisions)
+        for i in range(num):
+            unlatch_unit = num + (i + 1)
+            if (unlatch_unit not in Devices):
+                Domoticz.Device(Name=resp[i]["name"] + " Unlatch",
+                                Unit=unlatch_unit, TypeName="Switch",
+                                Switchtype=9, Used=1).Create()
+                Domoticz.Log("Unlatch for Lock " + resp[i]["name"] + " created.")
+            else:
+                Domoticz.Debug("Unlatch for Lock " + resp[i]["name"] + " already exists.")
+
+        Domoticz.Debug("Lock(s) created")
+        DumpConfigToLog()
+
+        # Check callbacks
+        req = 'http://' + self.bridgeIP + ':' + self.bridgePort + '/callback/list?' + self.generateTokenString()
+        Domoticz.Debug('checking callback ' + req)
+        found = False
+
+        try:
+            resp_raw = urllib.request.urlopen(req).read()
+        except HTTPError as e:
+            Domoticz.Error('NUKI HTTPError code: ' + str(e.code))
+        except URLError as e:
+            Domoticz.Error('NUKI URLError Reason: ' + str(e.reason))
+        except HTTPException as e:
+            Domoticz.Error('NUKI HTTPException: ' + str(e))
+        else:
+            strData = resp_raw.decode("utf-8", "ignore")
+            Domoticz.Debug("Callback list received " + strData)
+            resp_cb = json.loads(strData)
+            urlNeeded = 'http://' + self.myIP + ':' + str(self.callbackPort)
+            callbacks = resp_cb.get("callbacks", [])
+            Domoticz.Debug("Found callbacks: " + str(len(callbacks)))
+            for cb in callbacks:
+                if cb.get("url") == urlNeeded:
+                    Domoticz.Debug("Callback already installed")
+                    found = True
+                    break
+
+        if not found:
+            callback = ('http://' + self.bridgeIP + ':' + self.bridgePort +
+                        '/callback/add?' + self.generateTokenString() +
+                        '&url=http%3A%2F%2F' + self.myIP + '%3A' + str(self.callbackPort))
+            Domoticz.Log('Installing callback ' + callback)
+
             try:
-                resp = urllib.request.urlopen(req).read()
+                resp_raw = urllib.request.urlopen(callback).read()
             except HTTPError as e:
-                Domoticz.Error('NUKI HTTPError code: '+ str(e.code))
+                Domoticz.Error('NUKI HTTPError code: ' + str(e.code))
             except URLError as e:
-                Domoticz.Error('NUKI  URLError Reason: '+ str(e.reason))
-            except HTTPException as e:
-                Domoticz.Error('NUKI  URLError Reason: '+ str(e.reason))
+                Domoticz.Error('NUKI URLError Reason: ' + str(e.reason))
             else:
-                strData = resp.decode("utf-8", "ignore")
-                Domoticz.Debug("Callback list received " + strData)
-                resp = json.loads(strData)
-                urlNeeded = 'http://' + self.myIP + ':' + self.callbackPort
-                num=len(resp["callbacks"])
-                Domoticz.Debug("Found callbacks: " + str(num))
-                if num > 0:
-                    for i in range (num):
-                        if resp["callbacks"][i]["url"] == urlNeeded:
-                            Domoticz.Debug("Callback already installed")
-                            found = True
-
-            if not found:
-#           create callback for the bridge (all lock changes reported on this callback)
-                callback = 'http://' + self.bridgeIP + ':' + self.bridgePort + '/callback/add?'+self.generateTokenString()+'&url=http%3A%2F%2F' + self.myIP + '%3A' + self.callbackPort
-                Domoticz.Log('Installing callback ' + callback)
-
-                try:
-                    resp = urllib.request.urlopen(callback).read()
-                except HTTPError as e:
-                    Domoticz.Error('NUKI HTTPError code: '+ str(e.code))
-                except URLError as e:
-                    Domoticz.Error('NUKI  URLError Reason: '+ str(e.reason))
+                strData = resp_raw.decode("utf-8", "ignore")
+                Domoticz.Debug("Callback response received " + strData)
+                resp_add = json.loads(strData)
+                if resp_add.get("success", False):
+                    Domoticz.Log("Nuki Callback install succeeded")
                 else:
-                    strData = resp.decode("utf-8", "ignore")
-                    Domoticz.Debug("Callback response received " + strData)
-                    resp = json.loads(strData)
-                    if resp["success"]:
-                        Domoticz.Log("Nuki Callback install succeeded")
-                    else:
-                        Domoticz.Error("Unable to register NUKI callback")
+                    Domoticz.Error("Unable to register NUKI callback")
 
-#	    now listen on the port for any state changes
-            else:
-                self.httpServerConn = Domoticz.Connection(Name="Server Connection", Transport="TCP/IP", Protocol="HTML", Port=Parameters["Port"])
-                self.httpServerConn.Listen()
+        # FIX: Always start listening for callbacks (even after adding callback)
+        self.httpServerConn = Domoticz.Connection(
+            Name="Server Connection", Transport="TCP/IP", Protocol="HTML", Port=self.callbackPort
+        )
+        self.httpServerConn.Listen()
 
-            Domoticz.Debug("Leaving on start")
+        Domoticz.Debug("Leaving on start")
 
     def onStop(self):
-        del self.httpServerConn
-
+        try:
+            if self.httpServerConn is not None:
+                self.httpServerConn = None
+        except Exception:
+            pass
 
     def onConnect(self, Connection, Status, Description):
         if (Status == 0):
-            Domoticz.Log("Connected successfully to: "+Connection.Address+":"+Connection.Port)
+            Domoticz.Log("Connected successfully to: " + Connection.Address + ":" + Connection.Port)
         else:
-            Domoticz.Log("Failed to connect ("+str(Status)+") to: "+Connection.Address+":"+Connection.Port+" with error: "+Description)
+            Domoticz.Log("Failed to connect (" + str(Status) + ") to: " + Connection.Address + ":" + Connection.Port +
+                         " with error: " + Description)
         Domoticz.Log(str(Connection))
         if (Connection != self.httpClientConn):
             self.httpServerConns[Connection.Name] = Connection
@@ -259,51 +255,56 @@ class BasePlugin:
         Domoticz.Debug("onMessage called for connection: " + Connection.Address + ":" + Connection.Port)
         strData = Data.decode("utf-8", "ignore")
         Domoticz.Debug("Lock message received " + strData)
-        Response = strData[strData.index('{') :]
-        Domoticz.Debug("JSON is " + Response)
 
-        Response = json.loads(Response)
+        try:
+            Response = strData[strData.index('{'):]
+            Domoticz.Debug("JSON is " + Response)
+            Response = json.loads(Response)
+        except Exception as e:
+            Domoticz.Error("Failed parsing callback JSON: " + str(e))
+            return
 
-        lock_id = Response["nukiId"]
+        lock_id = Response.get("nukiId")
+        if lock_id not in self.lockIds:
+            Domoticz.Error("Unknown lock id in callback: " + str(lock_id))
+            return
+
         foundlock = self.lockIds.index(lock_id)
-        Domoticz.Debug("Found lock id " + str(foundlock))
-        Domoticz.Debug("Found lock name " + self.lockNames[foundlock])
-        if (Response["batteryCritical"]):
-            batt = 10
-        else:
-            batt = 255
+        batt = 10 if Response.get("batteryCritical", False) else 255
 
-        Domoticz.Log(self.lockNames[foundlock] + " requests update: " + Response["stateName"])
-        if (Response["state"] == 1):
-            Domoticz.Debug(self.lockNames[foundlock] + " is LOCKED ")
-            sval = 'Locked'
-            nval = 1
-            UpdateDevice(foundlock + 1, nval, sval, batt)
-        elif (Response["state"] == 3):
-            Domoticz.Debug(self.lockNames[foundlock] + " is UNLOCKED ")
-            sval = 'Unlocked'
-            nval = 0
-            UpdateDevice(foundlock + 1, nval, sval, batt)
-        elif (Response["state"] == 0):
-            Domoticz.Error("Nuki lock" + self.lockNames[foundlock] + " UNCALIBRATED ")
-        elif (Response["state"] == 254):
-            Domoticz.Error("Nuki lock" + self.lockNames[foundlock] + " MOTOR BLOCKED ")
+        Domoticz.Log(self.lockNames[foundlock] + " requests update: " + str(Response.get("stateName", "")))
+
+        if (Response.get("state") == 1):
+            UpdateDevice(foundlock + 1, 1, "Locked", batt)
+        elif (Response.get("state") == 3):
+            UpdateDevice(foundlock + 1, 0, "Unlocked", batt)
+        elif (Response.get("state") == 0):
+            Domoticz.Error("Nuki lock " + self.lockNames[foundlock] + " UNCALIBRATED")
+        elif (Response.get("state") == 254):
+            Domoticz.Error("Nuki lock " + self.lockNames[foundlock] + " MOTOR BLOCKED")
         else:
-            Domoticz.Log("Nuki lock temporary state ignored" + Response["stateName"])
+            Domoticz.Log("Nuki lock temporary state ignored " + str(Response.get("stateName", "")))
 
     def onCommand(self, Unit, Command, Level, Hue):
-        Domoticz.Debug("onCommand called for Unit " + str(Unit) + ": Parameter '" + str(Command) + "', Level: " + str(Level))
-        
-        #       test if this is the unlatch device or a lock itself. Unlatch devices are numbered after the locks
+        Domoticz.Debug("onCommand called for Unit " + str(Unit) + ": Parameter '" +
+                       str(Command) + "', Level: " + str(Level))
+
+        # Locks: 1..N, Unlatch: N+1..2N
         if Unit > self.numLocks:
-            lockid = str(self.lockIds[Unit-1-self.numLocks])
-            lockname = self.lockNames[Unit-1-self.numLocks]
-            action = 3
-            sval = 'Locked'
-            nval = 1
+            idx = Unit - 1 - self.numLocks
+            if idx < 0 or idx >= self.numLocks:
+                Domoticz.Error("Invalid unlatch Unit: " + str(Unit))
+                return
+            lockid = str(self.lockIds[idx])
+            lockname = self.lockNames[idx]
+            action = 3  # unlatch
         else:
-            lockid = str(self.lockIds[Unit-1])
-            lockname = self.lockNames[Unit-1]
+            idx = Unit - 1
+            if idx < 0 or idx >= self.numLocks:
+                Domoticz.Error("Invalid lock Unit: " + str(Unit))
+                return
+            lockid = str(self.lockIds[idx])
+            lockname = self.lockNames[idx]
 
             if Command == 'On':
                 action = 2
@@ -313,86 +314,74 @@ class BasePlugin:
                 action = 1
                 sval = 'Unlocked'
                 nval = 0
-        
-        Domoticz.Log("Switch device " + lockid + " with name  " + lockname)
 
-        Domoticz.Debug('setting action to ' + str(action))
-        req = 'http://' + str(self.bridgeIP) + ':' + self.bridgePort + '/lockAction?'+self.generateTokenString()+'&nukiId=' + lockid + '&action=' + str(action)
+        Domoticz.Log("Switch device " + lockid + " with name " + lockname)
+        req = ('http://' + str(self.bridgeIP) + ':' + self.bridgePort +
+               '/lockAction?' + self.generateTokenString() +
+               '&nukiId=' + lockid + '&action=' + str(action))
         Domoticz.Debug('Executing lockaction ' + str(req))
+
         try:
-            resp = urllib.request.urlopen(req).read()
+            resp_raw = urllib.request.urlopen(req).read()
         except HTTPError as e:
-            Domoticz.Error('NUKI HTTPError code: '+ str(e.code))
+            Domoticz.Error('NUKI HTTPError code: ' + str(e.code))
         except URLError as e:
-            Domoticz.Error('NUKI  URLError Reason: '+ str(e.reason))
+            Domoticz.Error('NUKI URLError Reason: ' + str(e.reason))
         else:
-            strData = resp.decode("utf-8", "ignore")
+            strData = resp_raw.decode("utf-8", "ignore")
             Domoticz.Debug("Lock command response received " + strData)
             resp = json.loads(strData)
-            if not resp["success"]:
+            if not resp.get("success", False):
                 Domoticz.Error("Error switching lockstatus for lock " + lockname)
             else:
+                # Only update main lock devices; unlatch is a pulse action
                 if Unit <= self.numLocks:
                     UpdateDevice(Unit, nval, sval, 0)
 
     def onDisconnect(self, Connection):
         Domoticz.Debug("onDisconnect called for connection '" + Connection.Name + "'.")
-        Domoticz.Debug("Server Connections:")
-        for x in self.httpServerConns:
-            Domoticz.Debug("--> " + str(x) + "'.")
         if Connection.Name in self.httpServerConns:
             del self.httpServerConns[Connection.Name]
 
     def onHeartbeat(self):
-        #   On timer:
-        #   poll every lock on the bridge
-        #   if status different:
-        #    change the lock status
         self.heartbeats += 1
         Domoticz.Debug("onHeartbeat called " + str(self.heartbeats))
-#	heartbeat is every 10 seconds, pollinterval is in minutes 
+        # heartbeat every 10 sec, pollInterval in minutes -> pollInterval*6 heartbeats
         if (self.heartbeats / 6) >= self.pollInterval:
             self.heartbeats = 0
             Domoticz.Log("onHeartbeat check locks")
-            for i in range (self.numLocks):
+            for i in range(self.numLocks):
                 nukiId = self.lockIds[i]
-                req = 'http://' + self.bridgeIP + ':' + self.bridgePort + '/lockState?'+self.generateTokenString()+'&nukiId=' + str(nukiId)
+                req = ('http://' + self.bridgeIP + ':' + self.bridgePort +
+                       '/lockState?' + self.generateTokenString() +
+                       '&nukiId=' + str(nukiId))
                 Domoticz.Debug('Checking lockstatus ' + req)
                 try:
-                    resp = urllib.request.urlopen(req).read()
+                    resp_raw = urllib.request.urlopen(req).read()
                 except HTTPError as e:
-                    Domoticz.Error('NUKI HTTPError code: '+ str(e.code))
+                    Domoticz.Error('NUKI HTTPError code: ' + str(e.code))
                 except URLError as e:
-                    Domoticz.Error('NUKI  URLError Reason: '+ str(e.reason))
+                    Domoticz.Error('NUKI URLError Reason: ' + str(e.reason))
                 else:
-                    strData = resp.decode("utf-8", "ignore")
+                    strData = resp_raw.decode("utf-8", "ignore")
                     Domoticz.Debug("Lock status received " + strData)
                     resp = json.loads(strData)
 
-                    if (resp["success"]):
-                        if (resp["batteryCritical"]):
-                            batt = 10
+                    if resp.get("success", False):
+                        batt = 10 if resp.get("batteryCritical", False) else 255
+                        if resp.get("state") == 1:
+                            UpdateDevice(i + 1, 1, "Locked", batt)
+                        elif resp.get("state") == 3:
+                            UpdateDevice(i + 1, 0, "Unlocked", batt)
+                        elif resp.get("state") == 0:
+                            Domoticz.Error("Nuki lock " + self.lockNames[i] + " UNCALIBRATED")
+                        elif resp.get("state") == 254:
+                            Domoticz.Error("Nuki lock " + self.lockNames[i] + " MOTOR BLOCKED")
                         else:
-                            batt = 255
-
-                        if (resp["state"] == 1):
-                            Domoticz.Debug(self.lockNames[i] + " is LOCKED ")
-                            sval = 'Locked'
-                            nval = 1
-                            UpdateDevice(i + 1, nval, sval, batt)
-                        elif (resp["state"] == 3):
-                            Domoticz.Debug(self.lockNames[i] + " is UNLOCKED ")
-                            sval = 'Unlocked'
-                            nval = 0
-                            UpdateDevice(i + 1, nval, sval, batt)
-                        elif (resp["state"] == 0):
-                            Domoticz.Error("Nuki lock" + self.lockNames[i] + " UNCALIBRATED ")
-                        elif (resp["state"] == 254):
-                            Domoticz.Error("Nuki lock" + self.lockNames[i] + " MOTOR BLOCKED ")
-                        else:
-                            Domoticz.Log("Nuki lock temporary state ignored" + resp["stateName"])
+                            Domoticz.Log("Nuki lock temporary state ignored " + str(resp.get("stateName", "")))
                     else:
                         Domoticz.Log("Nuki lock false response received")
+
 
 global _plugin
 _plugin = BasePlugin()
@@ -410,7 +399,6 @@ def onConnect(Connection, Status, Description):
     global _plugin
     _plugin.onConnect(Connection, Status, Description)
 
-
 def onMessage(Connection, Data):
     global _plugin
     _plugin.onMessage(Connection, Data)
@@ -423,21 +411,23 @@ def onDisconnect(Connection):
     global _plugin
     _plugin.onDisconnect(Connection)
 
-
 def onHeartbeat():
     global _plugin
     _plugin.onHeartbeat()
 
-# Generic helper functions
+
 def LogMessage(Message):
-    if Parameters["Mode6"] != "Normal":
-        Domoticz.Log(Message)
-    elif Parameters["Mode6"] != "Debug":
+    mode = Parameters["Mode6"]
+    if mode == "Debug":
         Domoticz.Debug(Message)
+    elif mode == "File":
+        try:
+            with open("http.html", "w") as f:
+                f.write(Message)
+        except Exception:
+            pass
     else:
-        f = open("http.html", "w")
-        f.write(Message)
-        f.close()
+        Domoticz.Log(Message)
 
 
 def DumpConfigToLog():
@@ -455,26 +445,13 @@ def DumpConfigToLog():
     return
 
 
-def DumpJSONResponseToLog(jsonmsg):
-    if isinstance(jsonmsg, dict):
-        Domoticz.Log("HTTP Details (" + str(len(jsonmsg)) + "):")
-        for x in jsonmsg:
-            if isinstance(jsonmsg[x], dict):
-                Domoticz.Log("--->'" + x + " (" + str(len(jsonmsg[x])) + "):")
-                for y in jsonmsg[x]:
-                    Domoticz.Log("------->'" + y + "':'" + str(jsonmsg[x][y]) + "'")
-            else:
-                Domoticz.Log("--->'" + x + "':'" + str(jsonmsg[x]) + "'")
-
 def UpdateDevice(Unit, nValue, sValue, batt):
-    # Make sure that the Domoticz device still exists (they can be deleted) before updating it
     Domoticz.Debug("UpdateDevice called with " + str(Unit) + ' ' + str(nValue) + ' ' + str(sValue) + ' ' + str(batt))
-    if (Unit in Devices):
+    if Unit in Devices:
         if (Devices[Unit].nValue != nValue) or (Devices[Unit].sValue != sValue):
             if batt == 0:
-#               if there are no battery data then do not update
                 Devices[Unit].Update(nValue=nValue, sValue=str(sValue))
             else:
                 Devices[Unit].Update(nValue=nValue, sValue=str(sValue), BatteryLevel=batt)
-            Domoticz.Debug("Update "+str(nValue)+":'"+str(sValue)+"' ("+Devices[Unit].Name+")")
+            Domoticz.Debug("Update " + str(nValue) + ":'" + str(sValue) + "' (" + Devices[Unit].Name + ")")
     return

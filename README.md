@@ -12,7 +12,7 @@ and for the bridge to be put in developer mode in order to use the HTTP API
 
 ## Installation
 cd ~/domoticz/plugins
-git clone https://github.com/heggink/domoticz-nuki
+git clone https://github.com/schurgan/domoticz-nuki
 sudo service domoticz.sh restart
 Then create a hardware device for each bridge
 # Multiple bridges REQUIRE SEPARATE PORTS!!!

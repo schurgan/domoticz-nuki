@@ -10,7 +10,7 @@ random, hashlib, datetime modules are needed if you intend to use Hashed tokens
 It also requires all the locks to be assigned to the bridge
 and for the bridge to be put in developer mode in order to use the HTTP API
 
-## Installation
+Installation
 cd domoticz/plugins
 git clone https://github.com/schurgan/domoticz-nuki.git
 sudo service domoticz.sh restart

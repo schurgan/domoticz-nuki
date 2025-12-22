@@ -1,49 +1,58 @@
-# domoticz-nuki
-python plugin for the nuki locks
+Nuki Lock Plugin for Domoticz
 
-# Current status
-Tested to work with single lock per bridge and multiple bridges per installation
+Domoticz Plugin zur Anbindung von Nuki Smart Locks über die Nuki Bridge (Developer Mode) via HTTP + Callback.
 
-## Prerequisites
-This plugin requires python modules json and urllib.
-random, hashlib, datetime modules are needed if you intend to use Hashed tokens
-It also requires all the locks to be assigned to the bridge
-and for the bridge to be put in developer mode in order to use the HTTP API
+Features
 
-## Installation
-cd domoticz/plugins,
-git clone https://github.com/schurgan/domoticz-nuki.git,
-sudo service domoticz.sh restart
+🔒 Steuerung von mehreren Nuki Locks
 
-Then create a hardware device for each bridge
-# Multiple bridges REQUIRE SEPARATE PORTS!!!
-If not then the messages from one bridge will be sent to the plugin of the other and vice versa
+🔔 Callback-Unterstützung für sofortige Statusupdates
 
-Once started, the plugin will
-- create lock devices for all locks configured in the bridge
-- create a callback in the bridge that sends lock status update messages to the plugin
-- polls all the configured locks at the poll interval specified
-# PLS NOTE that nuki locks drain batteries fast if polling is set too low
-Since the lock status is updated on start and the lock shouldn't get out of sync as long as the plugin runs
-a short polling time should not be required at all
-Alternatively, swap the batteries for a (hacked) power supply
+🔁 Polling als Fallback (konfigurierbar)
 
-## Parameters
-| Parameter | Description |
-| :--- | :--- |
-| **Port** | free port on your system for the bridge to send status messages to (default 8008) |
-| **Bridge IP** | IP address of the Nuki Bridge |
-| **Bridge token** | Token configured when putting the bridge in developer mode |
-| **Poll interval in minutes** | Polling time in minutes for the plugin to check lock status |
-## Devices
-| Name | Description |
-| :--- | :--- |
-| **Lock device** | For each lock configured in the bridge |
+🚪 Separater Unlatch-Button pro Schloss
 
-## To do
-1) Test multiple locks per bridge (anyone?)
-2) Delete the callback on deletion of the device
-Currently, all callbacks need to be removed manually: http://[IP OF THE BRIDGE]:8080/callback/remove?id=[ID CREATED BY THE PLUGIN]&token=[TOKEN]
-Callbacks can be easily listed: http://[IP OF THE BRIDGE]:8080/callback/list?token=[TOKEN]
-# Please note that a max of 3 callbacks is allowed
-This should allow you to install this next to any existing scripts to test
+🔋 Batteriestatus (kritisch / ok)
+
+🔐 Unterstützung für Plain und Hashed Token
+
+🛡️ Stabilisiert gegen Netzwerk- und Bridge-Ausfälle (Timeouts)
+
+Voraussetzungen
+
+Domoticz (Python Plugin Support)
+
+Nuki Bridge mit aktiviertem Developer Mode
+
+Netzwerkzugriff zwischen Domoticz ↔ Nuki Bridge
+
+Installation
+cd ~/domoticz/plugins
+git clone https://github.com/schurgan/domoticz-nuki.git
+Danach Domoticz neu starten.
+
+Plugin-Konfiguration
+
+Parameter	Beschreibung
+Callback Port	Port, auf dem Domoticz Callbacks empfängt
+Bridge IP	IP-Adresse der Nuki Bridge
+Bridge Port	Standard: 8080
+Bridge Token	API-Token aus der Nuki Bridge
+Token Mode	Plain oder Hashed
+Poll Interval	Poll-Intervall in Minuten
+Logging	Normal, Debug oder File
+
+Domoticz Geräte
+
+Units 1..N → Nuki Locks (Lock / Unlock)
+Units N+1..2N → Unlatch (Impuls)
+
+Hinweise
+
+Callback wird automatisch registriert
+Polling dient nur als Backup, wenn Callbacks ausfallen
+Laufzeitdateien (__pycache__, http.html, Logs) sind bewusst ausgeschlossen
+
+Lizenz
+
+MIT License – siehe LICENCE

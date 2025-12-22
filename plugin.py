@@ -241,14 +241,14 @@ class BasePlugin:
         Domoticz.Debug("Leaving on start")
 
     def onStop(self):
-        try:
-            if self.httpServerConn:
-                try:
-                    self.httpServerConn.Disconnect()
-                except Exception:
-                    pass
-        except Exception:
-            pass
+        ##try:
+            ##if self.httpServerConn:
+                ##try:
+                    ##self.httpServerConn.Disconnect()
+                ##except Exception:
+                    ##pass
+        ##except Exception:
+            ##pass
 
         self.httpServerConn = None
         self.httpServerConns = {}

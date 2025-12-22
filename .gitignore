@@ -1,4 +1,14 @@
-__pycache__/
-__pycache__/
+# Python
 __pycache__/
 *.pyc
+*.pyo
+
+# Logs / runtime
+http.html
+*.log
+
+# Editor / OS
+.DS_Store
+*~
+*.swp
+

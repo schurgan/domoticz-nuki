@@ -1,10 +1,6 @@
 """
 <?xml version="1.0" encoding="UTF-8"?>
-<<<<<<< HEAD
-<plugin key="NukiLock" name="Nuki Lock Plugin" author="heggink" version="1.0.7-fixed">
-=======
 <plugin key="NukiLock" name="Nuki Lock Plugin" author="heggink/schurgan" version="1.1.0-fixed">
->>>>>>> d90e96a (Fix Nuki plugin: syntax, timeouts, callback parsing)
     <description>
         <h2>Nuki Lock Plugin</h2>
         <p>Domoticz HTTP support for Nuki locks via Nuki Bridge (developer mode).</p>
@@ -35,18 +31,6 @@
 """
 #  nuki python plugin (fixed)
 #
-<<<<<<< HEAD
-# Author: heggink/schurgan, 2025 (with fixes)
-#
-# Fixes:
-# - Unlatch unit numbering moved to N+1..2N (no unit collisions)
-# - Callback listener now ALWAYS starts (also after callback add)
-# - HTTPException import fixed
-# - Port types fixed (int for listen port)
-# - onStop safe
-# - LogMessage logic corrected
-#
-=======
 # Author: heggink/schurgan/ChatGPT, 12.2025 (with fixes)
 # Fixes:
 # - Unlatch unit numbering moved to N+1..2N (no unit collisions)
@@ -56,7 +40,6 @@
 # - onStop safe
 # - LogMessage logic corrected
 #
->>>>>>> d90e96a (Fix Nuki plugin: syntax, timeouts, callback parsing)
 import Domoticz
 import json
 import socket
@@ -121,17 +104,6 @@ class BasePlugin:
         if (nukiHashDisabled and self.hashedToken):
             self.hashedToken = False
             Domoticz.Error('Missing imports for Hashed token generation - Falling back to Plain')
-<<<<<<< HEAD
-
-        # Determine local IP (for callback URL)
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("8.8.8.8", 80))
-        self.myIP = s.getsockname()[0]
-        s.close()
-        Domoticz.Debug("My IP is " + self.myIP)
-        Domoticz.Log("Nuki plugin started on IP " + self.myIP + " and port " + str(self.callbackPort))
-
-=======
 
         # Determine local IP (for callback URL)
         s = None
@@ -148,17 +120,12 @@ class BasePlugin:
             except Exception:
                 pass
         
->>>>>>> d90e96a (Fix Nuki plugin: syntax, timeouts, callback parsing)
         # List locks
         req = 'http://' + self.bridgeIP + ':' + self.bridgePort + '/list?' + self.generateTokenString()
         Domoticz.Debug('REQUESTING ' + req)
 
         try:
-<<<<<<< HEAD
-            resp_raw = urllib.request.urlopen(req).read()
-=======
             resp_raw = urllib.request.urlopen(req, timeout=8).read()
->>>>>>> d90e96a (Fix Nuki plugin: syntax, timeouts, callback parsing)
         except HTTPError as e:
             Domoticz.Error('NUKI HTTPError code: ' + str(e.code))
             return
@@ -224,11 +191,7 @@ class BasePlugin:
         found = False
 
         try:
-<<<<<<< HEAD
-            resp_raw = urllib.request.urlopen(req).read()
-=======
             resp_raw = urllib.request.urlopen(req, timeout=8).read()
->>>>>>> d90e96a (Fix Nuki plugin: syntax, timeouts, callback parsing)
         except HTTPError as e:
             Domoticz.Error('NUKI HTTPError code: ' + str(e.code))
         except URLError as e:
@@ -255,11 +218,7 @@ class BasePlugin:
             Domoticz.Log('Installing callback ' + callback)
 
             try:
-<<<<<<< HEAD
-                resp_raw = urllib.request.urlopen(callback).read()
-=======
                 resp_raw = urllib.request.urlopen(callback, timeout=8).read()
->>>>>>> d90e96a (Fix Nuki plugin: syntax, timeouts, callback parsing)
             except HTTPError as e:
                 Domoticz.Error('NUKI HTTPError code: ' + str(e.code))
             except URLError as e:
@@ -283,12 +242,6 @@ class BasePlugin:
 
     def onStop(self):
         try:
-<<<<<<< HEAD
-            if self.httpServerConn is not None:
-                self.httpServerConn = None
-        except Exception:
-            pass
-=======
             if self.httpServerConn:
                 try:
                     self.httpServerConn.Disconnect()
@@ -305,7 +258,6 @@ class BasePlugin:
                 ##self.httpServerConn = None
         ##except Exception:
             ##pass
->>>>>>> d90e96a (Fix Nuki plugin: syntax, timeouts, callback parsing)
 
     def onConnect(self, Connection, Status, Description):
         if (Status == 0):
@@ -323,11 +275,6 @@ class BasePlugin:
         Domoticz.Debug("Lock message received " + strData)
 
         try:
-<<<<<<< HEAD
-            Response = strData[strData.index('{'):]
-            Domoticz.Debug("JSON is " + Response)
-            Response = json.loads(Response)
-=======
             # Body sauber vom HTTP-Header trennen
             parts = strData.split("\r\n\r\n", 1)
             body = parts[1] if len(parts) > 1 else strData
@@ -339,13 +286,10 @@ class BasePlugin:
 
             Domoticz.Debug("JSON body is " + body)
             Response = json.loads(body)
->>>>>>> d90e96a (Fix Nuki plugin: syntax, timeouts, callback parsing)
         except Exception as e:
             Domoticz.Error("Failed parsing callback JSON: " + str(e))
             return
 
-<<<<<<< HEAD
-=======
         ##try:
             ##Response = strData[strData.index('{'):]
             ##Domoticz.Debug("JSON is " + Response)
@@ -354,7 +298,6 @@ class BasePlugin:
             ##Domoticz.Error("Failed parsing callback JSON: " + str(e))
             ##return
 
->>>>>>> d90e96a (Fix Nuki plugin: syntax, timeouts, callback parsing)
         lock_id = Response.get("nukiId")
         if lock_id not in self.lockIds:
             Domoticz.Error("Unknown lock id in callback: " + str(lock_id))
@@ -413,11 +356,7 @@ class BasePlugin:
         Domoticz.Debug('Executing lockaction ' + str(req))
 
         try:
-<<<<<<< HEAD
-            resp_raw = urllib.request.urlopen(req).read()
-=======
             resp_raw = urllib.request.urlopen(req, timeout=8).read()
->>>>>>> d90e96a (Fix Nuki plugin: syntax, timeouts, callback parsing)
         except HTTPError as e:
             Domoticz.Error('NUKI HTTPError code: ' + str(e.code))
         except URLError as e:
@@ -442,12 +381,8 @@ class BasePlugin:
         self.heartbeats += 1
         Domoticz.Debug("onHeartbeat called " + str(self.heartbeats))
         # heartbeat every 10 sec, pollInterval in minutes -> pollInterval*6 heartbeats
-<<<<<<< HEAD
-        if (self.heartbeats / 6) >= self.pollInterval:
-=======
         if self.heartbeats >= self.pollInterval * 6:
         ##if (self.heartbeats / 6) >= self.pollInterval:
->>>>>>> d90e96a (Fix Nuki plugin: syntax, timeouts, callback parsing)
             self.heartbeats = 0
             Domoticz.Log("onHeartbeat check locks")
             for i in range(self.numLocks):
@@ -457,11 +392,7 @@ class BasePlugin:
                        '&nukiId=' + str(nukiId))
                 Domoticz.Debug('Checking lockstatus ' + req)
                 try:
-<<<<<<< HEAD
-                    resp_raw = urllib.request.urlopen(req).read()
-=======
                     resp_raw = urllib.request.urlopen(req, timeout=8).read()
->>>>>>> d90e96a (Fix Nuki plugin: syntax, timeouts, callback parsing)
                 except HTTPError as e:
                     Domoticz.Error('NUKI HTTPError code: ' + str(e.code))
                 except URLError as e:

@@ -393,10 +393,9 @@ class BasePlugin:
                 Domoticz.Debug('Checking lockstatus ' + req)
                 try:
                     resp_raw = urllib.request.urlopen(req, timeout=8).read()
-                except HTTPError as e:
-                    Domoticz.Error('NUKI HTTPError code: ' + str(e.code))
-                except URLError as e:
-                    Domoticz.Error('NUKI URLError Reason: ' + str(e.reason))
+                except (HTTPError, URLError, TimeoutError, socket.timeout) as e:
+                    Domoticz.Error('NUKI request timeout/error: ' + str(e))
+                    continue
                 else:
                     strData = resp_raw.decode("utf-8", "ignore")
                     Domoticz.Debug("Lock status received " + strData)

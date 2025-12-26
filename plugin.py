@@ -1,9 +1,8 @@
 """
 <?xml version="1.0" encoding="UTF-8"?>
-<plugin key="NukiLock" name="Nuki Lock Plugin" author="heggink/schurgan" version="1.1.0-fixed">
+<plugin key="NukiLock" name="Nuki Lock Plugin" author="heggink/schurgan" version="1.1.0-fixed" externallink="https://github.com/schurgan/domoticz-nuki/">
     <description>
         <h2>Nuki Lock Plugin</h2>
-        <p>externallink="https://github.com/schurgan/domoticz-nuki/</p>
         <p>Domoticz HTTP support for Nuki locks via Nuki Bridge (developer mode).</p>
         <p>Locks are Units 1..N, Unlatch buttons are Units N+1..2N (no collisions).</p>
     </description>
